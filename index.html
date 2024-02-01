@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brightest Point History</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    canvas {
+      border: 2px solid #000;
+    }
+
+    #info {
+      margin-top: 10px;
+    }
+
+    #buttons {
+      display: flex;
+      margin-top: 10px;
+    }
+
+    button {
+      margin: 5px;
+    }
+
+    #mirror-canvas {
+      margin-top: 20px;
+      border: 2px solid #000;
+    }
+
+    #mirror-video {
+      position: absolute;
+      opacity: 0.2; /* Adjust the opacity value to make it less visible */
+      pointer-events: none; /* Disable pointer events on the mirror video */
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="640" height="480" willReadFrequently="true"></canvas>
+  <canvas id="mirror-canvas" width="640" height="480"></canvas>
+  <div id="info"></div>
+  <div id="buttons">
+    <button id="reset-button">Reset Line</button>
+    <button id="toggle-button">Start/Stop Drawing</button>
+    <button id="download-button">Download Image</button>
+  </div>
+
+  <!-- Add a mirror video element -->
+  <video id="mirror-video" autoplay></video>
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const context = canvas.getContext("2d");
+    const mirrorCanvas = document.getElementById("mirror-canvas");
+    const mirrorContext = mirrorCanvas.getContext("2d");
+    const mirrorVideo = document.getElementById("mirror-video");
+    const infoDiv = document.getElementById("info");
+    const resetButton = document.getElementById("reset-button");
+    const toggleButton = document.getElementById("toggle-button");
+    const downloadButton = document.getElementById("download-button");
+
+    let path = [];
+    let ambientBrightness = 0; // Initialize ambient brightness
+    let isDrawing = false; // Flag to control drawing
+
+    function calculateAmbientBrightness(imageData) {
+      let sum = 0;
+      for (let i = 0; i < imageData.length; i += 4) {
+        const brightness = (imageData[i] + imageData[i + 1] + imageData[i + 2]) / 3;
+        sum += brightness;
+      }
+      ambientBrightness = sum / (imageData.length / 4); // Calculate average brightness
+    }
+
+    function findBrightestPoint(imageData, threshold) {
+      let brightestIndex = 0;
+      let brightestValue = -1;
+
+      for (let i = 0; i < imageData.length; i += 4) {
+        const brightness = (imageData[i] + imageData[i + 1] + imageData[i + 2]) / 3;
+
+        if (brightness > brightestValue && brightness > threshold) {
+          brightestValue = brightness;
+          brightestIndex = i / 4; // Convert index to pixel position
+        }
+      }
+
+      const x = brightestIndex % canvas.width;
+      const y = Math.floor(brightestIndex / canvas.width);
+
+      return { x, y, brightness: brightestValue, rgb: [imageData[brightestIndex * 4], imageData[brightestIndex * 4 + 1], imageData[brightestIndex * 4 + 2]] };
+    }
+
+    function drawBrightestPoint(brightestPoint) {
+      context.fillStyle = "black";
+      context.beginPath();
+      context.arc(brightestPoint.x, brightestPoint.y, 5, 0, Math.PI * 2);
+      context.fill();
+
+      // Connect consecutive points with a line
+      path.push(brightestPoint);
+      context.beginPath();
+      context.moveTo(path[0].x, path[0].y);
+      for (let i = 1; i < path.length; i++) {
+        context.lineTo(path[i].x, path[i].y);
+      }
+      context.strokeStyle = "black";
+      context.stroke();
+
+      // Draw the line on the mirror canvas
+      mirrorContext.clearRect(0, 0, mirrorCanvas.width, mirrorCanvas.height);
+      mirrorContext.fillStyle = "black";
+      mirrorContext.beginPath();
+      mirrorContext.moveTo(path[0].x, path[0].y);
+      for (let i = 1; i < path.length; i++) {
+        mirrorContext.lineTo(path[i].x, path[i].y);
+      }
+      mirrorContext.strokeStyle = "black";
+      mirrorContext.stroke();
+    }
+
+    function updateCanvas(video) {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      const dynamicThreshold = ambientBrightness * 1.8; // Increase the multiplier further
+
+      calculateAmbientBrightness(imageData);
+
+      const currentBrightestPoint = findBrightestPoint(imageData, dynamicThreshold);
+
+      // Display coordinates and RGB values in real-time
+      infoDiv.innerHTML = `Brightest Point: X=${currentBrightestPoint.x}, Y=${currentBrightestPoint.y}, RGB=[${currentBrightestPoint.rgb}]`;
+
+      // Draw a point on the current brightest spot if above the dynamic threshold and drawing is enabled
+      if (isDrawing && currentBrightestPoint.brightness > dynamicThreshold) {
+        drawBrightestPoint(currentBrightestPoint);
+      }
+    }
+
+    function startAnimationLoop(video) {
+      requestAnimationFrame(function update() {
+        updateCanvas(video);
+        requestAnimationFrame(update);
+      });
+    }
+
+    function initCamera() {
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(function (stream) {
+          // mirrorVideo.srcObject = stream; // Set the mirror video source
+          mirrorVideo.play();
+
+          const video = document.createElement("video");
+          video.srcObject = stream;
+          video.play();
+
+          video.addEventListener("loadedmetadata", function () {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            document.body.appendChild(canvas);
+
+            mirrorCanvas.width = video.videoWidth;
+            mirrorCanvas.height = video.videoHeight;
+            document.body.appendChild(mirrorCanvas);
+
+            startAnimationLoop(video);
+          });
+        })
+        .catch(function (error) {
+          console.error("Error accessing the camera: ", error);
+        });
+    }
+
+    function resetLine() {
+      path = [];
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      mirrorContext.clearRect(0, 0, mirrorCanvas.width, mirrorCanvas.height);
+    }
+
+    function toggleDrawing() {
+      isDrawing = !isDrawing; // Toggle the drawing flag
+    }
+
+    function downloadImage() {
+      const dataURL = mirrorCanvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = dataURL;
+      a.download = "mirror_canvas.png";
+      a.click();
+    }
+
+    initCamera();
+
+    resetButton.addEventListener("click", resetLine);
+    toggleButton.addEventListener("click", toggleDrawing);
+    downloadButton.addEventListener("click", downloadImage);
+  </script>
+</body>
+</html>
