@@ -27,7 +27,7 @@
     }
 
     button {
-      margin: 20px;
+      margin: 5px;
     }
 
     #mirror-canvas {
@@ -202,6 +202,17 @@
     resetButton.addEventListener("click", resetLine);
     toggleButton.addEventListener("click", toggleDrawing);
     downloadButton.addEventListener("click", downloadImage);
+
+    const muteButton = document.getElementById("mute-button");
+    
+    // Set the video to be muted by default
+    mirrorVideo.muted = true;
+
+    function toggleMute() {
+      // Mute/unmute logic (optional) goes here
+    }
+
+    muteButton.addEventListener("click", toggleMute);
   </script>
 </body>
 </html>
